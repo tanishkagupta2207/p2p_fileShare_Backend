@@ -21,8 +21,7 @@ app.use(cors());
 app.use(express.json());
 
 // Connect to MongoDB Atlas
-// const dbURI = 'mongodb+srv://Tanishka:Tanishka2207@cluster0.mongodb.net/ShareSync?retryWrites=true&w=majority&appName=Cluster0';
-const dbURI = 'mongodb+srv://Tanishka:Tanishka2207@sharesync.j77hj.mongodb.net/?retryWrites=true&w=majority&appName=ShareSync';
+const dbURI = process.env.REACT_APP_DB_URL;
 mongoose.connect(dbURI)
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.log(err));
