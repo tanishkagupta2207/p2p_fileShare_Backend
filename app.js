@@ -12,13 +12,14 @@ const app = express();
 const cors = require('cors');
 
 // Allow requests only from your frontend domain
-const corsOptions = {
-  origin: 'https://p2p-file-share-frontend.vercel.app',
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-};
+const io = socketIo(server, {
+  cors: {
+    origin: "https://p2p-file-share-frontend.vercel.app", // Allow requests from any origin
+    methods: ["GET", "POST"]
+  }
+});
 
-app.use(cors(corsOptions));
+app.use(cors());
 app.use(express.json());
 
 // Connect to MongoDB Atlas
