@@ -13,7 +13,7 @@ const app = express();
 const corsOptions = {
   origin: 'https://p2p-file-share-frontend.vercel.app',  // Only allow your frontend to access the backend
   methods: ['GET', 'POST'],  // Allow GET and POST requests
-  allowedHeaders: ['Content-Type', 'Authorization'],  // Allow these headers in requests
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],  // Allow these headers in requests
 };
 
 app.use(cors(corsOptions));
