@@ -1,107 +1,158 @@
-// const express = require('express');
-// const multer = require('multer');
-// // const File = require('../models/File');
-// const auth = require('../middleware/auth');
-// const path = require('path');
-// const fs = require('fs');
+const express = require('express');
+const multer = require('multer');
+const { google } = require('googleapis');
+const { PassThrough } = require('stream');
+const File = require('../models/File');
+const authMiddleware = require('../middleware/auth'); // Authentication middleware
 
-// const router = express.Router();
+const router = express.Router();
 
-// // Set up multer for file uploads
-// const storage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     cb(null, 'uploads/');
-//   },
-//   filename: (req, file, cb) => {
-//     cb(null, `${Date.now()}-${file.originalname}`);
-//   },
-// });
+// Configure multer to use memory storage
+const upload = multer({ storage: multer.memoryStorage() });
 
-// const upload = multer({ storage });
+// OAuth 2.0 setup
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET, 
+  process.env.GOOGLE_REDIRECT_URI 
+);
 
-// // Upload a file
-// router.post('/upload', auth, upload.single('file'), async (req, res) => {
-//   try {
-//     const { description } = req.body;
-//     const file = new File({
-//       originalFilename: req.file.originalname,
-//       filename: req.file.filename,
-//       filepath: req.file.path,
-//       description,
-//       uploadedBy: req.user.id,
-//     });
+// Token setup
+oauth2Client.setCredentials({
+  refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+});
 
-//     await file.save();
-//     console.log('File uploaded successfully:', file);
-//     res.json(file);
-//   } catch (err) {
-//     console.error('Error uploading file:', err.message);
-//     res.status(500).send('Server error');
-//   }
-// });
+// Google Drive API client
+const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
-// // Get all files
-// router.get('/', async (req, res) => {
-//   try {
-//     const files = await File.find().populate('uploadedBy', 'username');
-//     res.json(files);
-//   } catch (err) {
-//     console.error(err.message);
-//     res.status(500).send('Server error');
-//   }
-// });
+// **Upload File**
+router.post('/upload', authMiddleware, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
 
-// // Search for files
-// router.get('/search', async (req, res) => {
-//   try {
-//     const { query } = req.query;
-//     const files = await File.find({
-//       $or: [
-//         { filename: { $regex: query, $options: 'i' } },
-//         { description: { $regex: query, $options: 'i' } },
-//       ],
-//     }).populate('uploadedBy', 'username');
-//     res.json(files);
-//   } catch (err) {
-//     console.error(err.message);
-//     res.status(500).send('Server error');
-//   }
-// });
+    const { description } = req.body;
 
-// // Download a file
-// router.get('/download/:id', async (req, res) => {
-//   const fileId = req.params.id;
+    // Convert file buffer to stream
+    const bufferStream = new PassThrough();
+    bufferStream.end(req.file.buffer);
 
-//   try {
-//     console.log(`Attempting to download file with ID: ${fileId}`);
-//     const file = await File.findById(fileId);
-//     if (!file) {
-//       console.error('File not found');
-//       return res.status(404).json({ success: false, msg: 'File not found' });
-//     }
+    const fileMetadata = { name: req.file.originalname }; // Original file name
+    const media = { mimeType: req.file.mimetype, body: bufferStream }; // File stream
 
-//     const filePath = path.join(__dirname, '..', '..', file.filepath);
-//     console.log(`File path: ${filePath}`);
+    // Upload file to Google Drive
+    const driveResponse = await drive.files.create({
+      resource: fileMetadata,
+      media: media,
+      fields: 'id, name, webViewLink', // File ID and view link
+    });
 
-//     // Check if file exists
-//     if (!fs.existsSync(filePath)) {
-//       console.error('File does not exist on disk');
-//       return res.status(404).json({ success: false, msg: 'File not found on disk' });
-//     }
+    // Save file metadata to MongoDB
+    const file = new File({
+      originalFilename: req.file.originalname,
+      filename: driveResponse.data.id,
+      filepath: driveResponse.data.webViewLink, // Google Drive link
+      description,
+      uploadedBy: req.user.id, // Assuming `req.user` contains authenticated user info
+    });
 
-//     res.setHeader('Content-Disposition', `attachment; filename="${file.originalFilename}"`);
-//     res.sendFile(filePath, (err) => {
-//       if (err) {
-//         console.error('Error sending file:', err);
-//         res.status(500).send('Server error');
-//       } else {
-//         console.log('File sent successfully');
-//       }
-//     });
-//   } catch (error) {
-//     console.error('Error in downloadFile:', error);
-//     return res.status(500).json({ success: false, error: 'Server error during download' });
-//   }
-// });
+    await file.save();
 
-// module.exports = router;
+    res.json({ success: true, file });
+  } catch (err) {
+    console.error('Error uploading file:', err.message);
+    res.status(500).json({ success: false, message: 'Server error during file upload' });
+  }
+});
+
+// **Get All Files**
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    const files = await File.find().populate('uploadedBy', 'username');
+
+    if (files.length === 0) {
+      return res.status(404).json({ success: false, message: 'No files found' });
+    }
+
+    res.json(files); // Return all file metadata
+  } catch (err) {
+    console.error('Error fetching files:', err.message);
+    res.status(500).json({ success: false, message: 'Server error while fetching files' });
+  }
+});
+
+// **Search Files**
+router.get('/search', authMiddleware, async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query) {
+      return res.status(400).json({ success: false, message: 'Query parameter is required' });
+    }
+
+    const files = await File.find({
+      $or: [
+        { originalFilename: { $regex: query, $options: 'i' } }, // Match by original name
+        { description: { $regex: query, $options: 'i' } }, // Match by description
+      ],
+    }).populate('uploadedBy', 'username');
+
+    if (files.length === 0) {
+      return res.status(404).json({ success: false, message: 'No files found matching the query' });
+    }
+
+    res.json(files);
+  } catch (err) {
+    console.error('Error searching files:', err.message);
+    res.status(500).json({ success: false, message: 'Server error during file search' });
+  }
+});
+
+// **Download File**
+router.get('/download/:id', authMiddleware, async (req, res) => {
+  const fileId = req.params.id;
+
+  try {
+    // Fetch file metadata from MongoDB
+    const file = await File.findById(fileId);
+    if (!file) {
+      return res.status(404).json({ success: false, message: 'File not found in the database' });
+    }
+
+    // Retrieve file metadata from Google Drive
+    const metadata = await drive.files.get({
+      fileId: file.filename, // Google Drive file ID stored in the database
+      fields: 'name, mimeType',
+    });
+
+    const mimeType = metadata.data.mimeType;
+    const fileName = metadata.data.name;
+
+    // Get the file stream from Google Drive
+    const fileStream = await drive.files.get(
+      {
+        fileId: file.filename, // Google Drive file ID
+        alt: 'media',
+      },
+      { responseType: 'stream' }
+    );
+
+    // Set headers for file download
+    res.setHeader('Content-Disposition', `attachment; filename="${file.originalFilename || fileName}"`);
+    res.setHeader('Content-Type', mimeType);
+
+    // Pipe the file stream to the response
+    fileStream.data
+      .on('end', () => {console.log("file downloaded!");})
+      .on('error', (err) => {
+        console.error('Error streaming file:', err);
+        res.status(500).json({ success: false, message: 'Error streaming file from Google Drive' });
+      })
+      .pipe(res);
+  } catch (err) {
+    console.error('Error downloading file:', err.message);
+    res.status(500).json({ success: false, message: 'Server error during file download' });
+  }
+});
+
+module.exports = router;

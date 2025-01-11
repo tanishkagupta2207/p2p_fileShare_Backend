@@ -5,7 +5,7 @@ const cors = require('cors');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const authRoutes = require('./routes/auth');
-// const fileRoutes = require('./routes/files');
+const fileRoutes = require('./routes/files');
 
 const app = express();
 const server = http.createServer(app);
@@ -28,33 +28,10 @@ mongoose.connect(dbURI)
 
 // Routes
 app.use('/api/auth', authRoutes);
-// app.use('/api/files', fileRoutes);
+app.use('/api/files', fileRoutes);
 
 app.get('/', (req, res) => {
   res.send('P2P LAN File Sharing System');
-});
-
-// Socket.io connection
-const peers = {};
-
-io.on('connection', (socket) => {
-  console.log('New client connected');
-
-  socket.on('register-peer', ({ peerId }) => {
-    peers[peerId] = socket.id;
-    console.log(`Peer registered: ${peerId}`);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Client disconnected');
-    for (const peerId in peers) {
-      if (peers[peerId] === socket.id) {
-        delete peers[peerId];
-        console.log(`Peer unregistered: ${peerId}`);
-        break;
-      }
-    }
-  });
 });
 
 const PORT = process.env.PORT;
