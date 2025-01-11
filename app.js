@@ -9,8 +9,16 @@ const fileRoutes = require('./routes/files');
 
 const app = express();
 
-// Middleware
-app.use(cors());
+const cors = require('cors');
+
+// Allow requests only from your frontend domain
+const corsOptions = {
+  origin: 'https://p2p-file-share-frontend.vercel.app',
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Connect to MongoDB Atlas
