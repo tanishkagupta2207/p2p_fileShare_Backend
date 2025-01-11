@@ -9,8 +9,6 @@ const fileRoutes = require('./routes/files');
 
 const app = express();
 
-const cors = require('cors');
-
 // CORS configuration
 const corsOptions = {
   origin: 'https://p2p-file-share-frontend.vercel.app',  // Only allow your frontend to access the backend
