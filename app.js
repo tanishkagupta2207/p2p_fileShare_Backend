@@ -8,13 +8,6 @@ const authRoutes = require('./routes/auth');
 const fileRoutes = require('./routes/files');
 
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: "*", // Allow requests from any origin
-    methods: ["GET", "POST"]
-  }
-});
 
 // Middleware
 app.use(cors());
@@ -34,5 +27,5 @@ app.get('/', (req, res) => {
   res.send('P2P LAN File Sharing System');
 });
 
-const PORT = process.env.PORT;
-server.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
+// Export app for Vercel
+module.exports = app;
